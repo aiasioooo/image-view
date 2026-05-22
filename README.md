@@ -62,6 +62,7 @@ Remove it:
 - Left drag: pan
 - Space: pause/unpause animated GIF
 - Up / Down while paused: previous / next GIF frame
+- + / -: speed up / slow down animated GIF
 - Left / Right / A / D: previous / next image in the same folder
 - F: open the image folder in Explorer
 - L: lock zoom to the image's larger dimension and clamp dragging at image borders

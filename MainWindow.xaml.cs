@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private AnimatedImage? _animatedImage;
     private int _gifFrameIndex;
     private bool _gifPaused;
+    private double _gifSpeed = 1.0;
     private long _imageLoadVersion;
     private long _foregroundGenerationVersion;
     private string _status = "loading";
@@ -139,6 +140,7 @@ public partial class MainWindow : Window
             _animatedImage = null;
             _gifFrameIndex = 0;
             _gifPaused = false;
+            _gifSpeed = 1.0;
             _gifTimer.Stop();
             _loadedModes.Clear();
             InvalidateForegroundGeneration();
@@ -335,6 +337,18 @@ public partial class MainWindow : Window
                     e.Handled = true;
                     UpdateTitle();
                     return;
+                case Key.OemPlus:
+                case Key.Add:
+                    AdjustGifSpeed(1.25);
+                    e.Handled = true;
+                    UpdateTitle();
+                    return;
+                case Key.OemMinus:
+                case Key.Subtract:
+                    AdjustGifSpeed(0.8);
+                    e.Handled = true;
+                    UpdateTitle();
+                    return;
             }
         }
 
@@ -476,6 +490,7 @@ Ctrl + mouse wheel: smooth zoom
 Left drag: pan
 Space: pause/unpause animated GIF
 Up / Down while paused: previous / next GIF frame
++ / -: speed up / slow down animated GIF
 
 Left / Right / A / D: previous / next image in folder
 F: open image folder
@@ -542,6 +557,20 @@ H: help
             _gifTimer.Stop();
         }
         else
+        {
+            ScheduleGifTimer();
+        }
+    }
+
+    private void AdjustGifSpeed(double factor)
+    {
+        if (_animatedImage is null)
+        {
+            return;
+        }
+
+        _gifSpeed = Math.Clamp(_gifSpeed * factor, 0.1, 8.0);
+        if (!_gifPaused)
         {
             ScheduleGifTimer();
         }
@@ -686,7 +715,8 @@ H: help
             return;
         }
 
-        _gifTimer.Interval = _animatedImage.Frames[_gifFrameIndex].Delay;
+        var interval = TimeSpan.FromMilliseconds(Math.Max(5, _animatedImage.Frames[_gifFrameIndex].Delay.TotalMilliseconds / _gifSpeed));
+        _gifTimer.Interval = interval;
         _gifTimer.Start();
     }
 
@@ -873,7 +903,7 @@ H: help
         var borderLabel = _windowBorderEnabled ? " | border" : "";
         var gifLabel = _animatedImage is null
             ? ""
-            : $" | gif {_gifFrameIndex + 1}/{_animatedImage.Frames.Count}{(_gifPaused ? " paused" : "")}";
+            : $" | gif {_gifFrameIndex + 1}/{_animatedImage.Frames.Count} {_gifSpeed:0.##}x{(_gifPaused ? " paused" : "")}";
         var topmostLabel = Topmost ? " | topmost" : "";
         var pinModeLabel = _isWindowPinMode ? " | pin-mode" : "";
         var pinnedLabel = _pinnedOwnerHandle != nint.Zero ? " | pinned" : "";
