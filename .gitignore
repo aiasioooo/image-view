@@ -1,0 +1,36 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio / Rider / VS Code local state
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET generated files
+*.nupkg
+*.snupkg
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Publish / package artifacts
+publish/
+*.zip
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+~$*
+Thumbs.db
+Desktop.ini

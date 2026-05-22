@@ -1,0 +1,92 @@
+<Window x:Class="ImageViewerAutoscale.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ImageViewerAutoscale"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Image Viewer Autoscale"
+        Height="720"
+        Width="1080"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="#202020"
+        AllowDrop="True"
+        KeyDown="OnKeyDown"
+        PreviewMouseLeftButtonDown="OnPreviewMouseLeftButtonDown"
+        Drop="OnDrop">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="30"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="0"
+                            CornerRadius="0" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border x:Name="RootBorder"
+            BorderThickness="1"
+            BorderBrush="#202020"
+            SnapsToDevicePixels="True">
+        <Grid Background="#202020">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="TitleBarRow" Height="30" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid x:Name="TitleBar"
+                  Grid.Row="0"
+                  Background="#202020">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="138" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="TitleText"
+                           Margin="10,0,8,0"
+                           VerticalAlignment="Center"
+                           Foreground="#F0F0F0"
+                           FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Width="46"
+                            Height="30"
+                            BorderThickness="0"
+                            Background="#202020"
+                            Foreground="#F0F0F0"
+                            Content="_"
+                            Click="OnMinimizeClick"
+                            Focusable="False" />
+                    <Button Width="46"
+                            Height="30"
+                            BorderThickness="0"
+                            Background="#202020"
+                            Foreground="#F0F0F0"
+                            Content="[ ]"
+                            Click="OnMaximizeRestoreClick"
+                            Focusable="False" />
+                    <Button Width="46"
+                            Height="30"
+                            BorderThickness="0"
+                            Background="#202020"
+                            Foreground="#F0F0F0"
+                            Content="X"
+                            Click="OnCloseClick"
+                            Focusable="False" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1">
+                <local:ImageViewport x:Name="Viewport" Focusable="True" />
+                <local:CircularProgressRing x:Name="ProgressRing"
+                                            Width="42"
+                                            Height="42"
+                                            Margin="14"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom"
+                                            IsHitTestVisible="False"
+                                            Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
