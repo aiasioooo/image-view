@@ -199,11 +199,12 @@ public sealed class ImageViewport : FrameworkElement
 
         RenderOptions.SetBitmapScalingMode(this, scalingMode);
 
+        var oneToOneSize = GetOneToOneDipSize();
         var destination = new Rect(
             _offset.X,
             _offset.Y,
-            GetOneToOneDipSize().Width * _zoom,
-            GetOneToOneDipSize().Height * _zoom);
+            oneToOneSize.Width * _zoom,
+            oneToOneSize.Height * _zoom);
 
         drawingContext.DrawImage(_source, ExpandFlushEdges(destination));
     }

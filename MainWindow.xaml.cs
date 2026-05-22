@@ -2,6 +2,7 @@ using System.IO;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Input;
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
     private Vector _pinnedOwnerOffset;
     private NativeWindowInterop.NativeRect _lastPinnedOwnerRect;
     private DateTime _lastPinnedOwnerMoveUtc;
+    private readonly Dictionary<BorderSampleKey, Color> _borderColorCache = new();
 
     public MainWindow(string imagePath, ImageCacheService cacheService)
     {
@@ -92,10 +94,8 @@ public partial class MainWindow : Window
         Viewport.ZoomChanged += (_, zoom) =>
         {
             _zoomUsage.RecordZoom(zoom, _mode);
-            ApplyWindowBorder(GetCurrentModeBitmap());
             UpdateTitle();
         };
-        Viewport.SizeChanged += (_, _) => ApplyWindowBorder(GetCurrentModeBitmap());
 
         SourceInitialized += OnSourceInitialized;
         Loaded += async (_, _) => await LoadImageAsync(_imagePath);
@@ -150,6 +150,7 @@ public partial class MainWindow : Window
             ClearGifTempFiles();
             _gifTimer.Stop();
             _loadedModes.Clear();
+            _borderColorCache.Clear();
             InvalidateForegroundGeneration();
             _status = "loading";
             UpdateTitle();
@@ -488,10 +489,7 @@ public partial class MainWindow : Window
             return null;
         }
 
-        var files = Directory.EnumerateFiles(directory)
-            .Where(App.IsSupportedImage)
-            .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
+        var files = ImageDirectoryIndex.GetImages(directory);
 
         if (files.Length == 0)
         {
@@ -859,15 +857,15 @@ H: help
             SetProgressVisible(true);
             SetStatus($"generating frame {frameIndex + 1} {mode.Label()}");
 
-            if (!File.Exists(inputPath))
-            {
-                await SaveBitmapPngAsync(_animatedImage.Frames[frameIndex].Bitmap, inputPath, _windowLifetime.Token);
-            }
-
             if (!File.Exists(outputPath))
             {
                 if (mode.IsExternalMl())
                 {
+                    if (!File.Exists(inputPath))
+                    {
+                        await SaveBitmapPngAsync(_animatedImage.Frames[frameIndex].Bitmap, inputPath, _windowLifetime.Token);
+                    }
+
                     var progress = new Progress<double>(SetGenerationProgress);
                     await _cacheService.CreateExternalUpscaleAsync(inputPath, outputPath, mode, _windowLifetime.Token, progress);
                 }
@@ -1125,7 +1123,15 @@ H: help
         }
 
         RootBorder.BorderThickness = new Thickness(1);
-        RootBorder.BorderBrush = new SolidColorBrush(SampleBorderColor(bitmap, Viewport.GetVisibleSourcePixelRect()));
+        var visibleRect = Viewport.GetVisibleSourcePixelRect();
+        var key = BorderSampleKey.Create(bitmap, visibleRect);
+        if (!_borderColorCache.TryGetValue(key, out var color))
+        {
+            color = SampleBorderColor(bitmap, visibleRect);
+            _borderColorCache[key] = color;
+        }
+
+        RootBorder.BorderBrush = new SolidColorBrush(color);
     }
 
     private static Color SampleBorderColor(BitmapSource? bitmap, Int32Rect? visibleRect)
@@ -1222,6 +1228,22 @@ H: help
         green += pixel[1];
         red += pixel[2];
         count++;
+    }
+
+    private readonly record struct BorderSampleKey(int BitmapId, int X, int Y, int Width, int Height)
+    {
+        private const int BucketSize = 16;
+
+        public static BorderSampleKey Create(BitmapSource? bitmap, Int32Rect? rect)
+        {
+            var normalized = rect ?? new Int32Rect(0, 0, bitmap?.PixelWidth ?? 0, bitmap?.PixelHeight ?? 0);
+            return new BorderSampleKey(
+                bitmap is null ? 0 : RuntimeHelpers.GetHashCode(bitmap),
+                normalized.X / BucketSize,
+                normalized.Y / BucketSize,
+                Math.Max(1, normalized.Width / BucketSize),
+                Math.Max(1, normalized.Height / BucketSize));
+        }
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)

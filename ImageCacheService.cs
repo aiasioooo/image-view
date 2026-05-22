@@ -12,6 +12,7 @@ public sealed class ImageCacheService
 {
     private static readonly TimeSpan CacheUnusedLifetime = TimeSpan.FromHours(3);
     private static readonly TimeSpan CacheCleanupInterval = TimeSpan.FromMinutes(15);
+    private static readonly SemaphoreSlim GenerationSemaphore = new(2);
     private readonly ConcurrentDictionary<string, Lazy<CacheJob>> _jobs = new();
     private readonly ExternalUpscalerConfig _upscalerConfig;
     private readonly string _appRoot;
@@ -99,8 +100,16 @@ public sealed class ImageCacheService
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-        await RunExternalUpscalerAsync(inputPath, outputPath, mode, cancellationToken, progress)
-            .ConfigureAwait(false);
+        await GenerationSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await RunExternalUpscalerAsync(inputPath, outputPath, mode, cancellationToken, progress)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            GenerationSemaphore.Release();
+        }
     }
 
     public string CreateTemporaryFrameCacheDirectory()
@@ -142,17 +151,25 @@ public sealed class ImageCacheService
         IProgress<double>? progress)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        await GenerationSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        if (mode.IsExternalMl())
+        try
         {
-            await RunExternalUpscalerAsync(imagePath, outputPath, mode, cancellationToken, progress).ConfigureAwait(false);
+            if (mode.IsExternalMl())
+            {
+                await RunExternalUpscalerAsync(imagePath, outputPath, mode, cancellationToken, progress).ConfigureAwait(false);
+            }
+            else
+            {
+                progress?.Report(5);
+                await WpfImageScaler.ScaleAndSavePngAsync(imagePath, outputPath, mode.Scale(), cancellationToken)
+                    .ConfigureAwait(false);
+                progress?.Report(100);
+            }
         }
-        else
+        finally
         {
-            progress?.Report(5);
-            await WpfImageScaler.ScaleAndSavePngAsync(imagePath, outputPath, mode.Scale(), cancellationToken)
-                .ConfigureAwait(false);
-            progress?.Report(100);
+            GenerationSemaphore.Release();
         }
 
         TouchCacheFile(outputPath);
@@ -366,10 +383,7 @@ public sealed class ImageCacheService
             yield break;
         }
 
-        var files = Directory.EnumerateFiles(directory)
-            .Where(App.IsSupportedImage)
-            .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
+        var files = ImageDirectoryIndex.GetImages(directory);
 
         var index = Array.FindIndex(files, path => string.Equals(path, imagePath, StringComparison.OrdinalIgnoreCase));
         if (index < 0)
