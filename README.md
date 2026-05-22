@@ -1,6 +1,8 @@
 # Image Viewer Autoscale
 
-Minimal WPF image viewer focused on zooming and comparing scaled variants.
+Image Viewer Autoscale is a fast, keyboard-driven Windows image viewer for inspecting AI-generated anime artwork at detail level. It opens images in clean per-image windows, keeps zooming and panning responsive, and lets you compare original, high-quality resized, and Real-ESRGAN anime-upscaled variants without leaving the viewer.
+
+It is built for quick visual checking: full-resolution startup, directory navigation, animated GIF playback, per-frame GIF scaling while paused, sampled window borders, movable floating windows, and temporary generated caches that clean themselves up.
 
 ## Run
 
