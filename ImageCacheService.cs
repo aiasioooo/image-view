@@ -86,6 +86,30 @@ public sealed class ImageCacheService
         await Task.CompletedTask;
     }
 
+    public async Task CreateExternalUpscaleAsync(
+        string inputPath,
+        string outputPath,
+        DisplayMode mode,
+        CancellationToken cancellationToken,
+        IProgress<double>? progress = null)
+    {
+        if (!mode.IsExternalMl())
+        {
+            throw new ArgumentException("Mode must use an external ML upscaler.", nameof(mode));
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        await RunExternalUpscalerAsync(inputPath, outputPath, mode, cancellationToken, progress)
+            .ConfigureAwait(false);
+    }
+
+    public string CreateTemporaryFrameCacheDirectory()
+    {
+        var path = Path.Combine(_cacheRoot, "gif-frames", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
     private static void ObserveBackground(Task task)
     {
         _ = task.ContinueWith(

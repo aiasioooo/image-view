@@ -14,6 +14,16 @@ public static class WpfImageScaler
         int scale,
         CancellationToken cancellationToken)
     {
+        var source = ImageLoader.LoadFrozen(inputPath);
+        return ScaleAndSavePngAsync(source, outputPath, scale, cancellationToken);
+    }
+
+    public static Task ScaleAndSavePngAsync(
+        BitmapSource source,
+        string outputPath,
+        int scale,
+        CancellationToken cancellationToken)
+    {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var thread = new Thread(() =>
@@ -21,7 +31,6 @@ public static class WpfImageScaler
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var source = ImageLoader.LoadFrozen(inputPath);
                 var width = checked(source.PixelWidth * scale);
                 var height = checked(source.PixelHeight * scale);
 

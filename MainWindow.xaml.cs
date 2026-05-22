@@ -43,6 +43,9 @@ public partial class MainWindow : Window
     private int _gifFrameIndex;
     private bool _gifPaused;
     private double _gifSpeed = 1.0;
+    private DisplayMode[]? _gifFrameModes;
+    private readonly Dictionary<(int FrameIndex, DisplayMode Mode), BitmapSource> _gifGeneratedFrames = new();
+    private string? _gifTempRoot;
     private long _imageLoadVersion;
     private long _foregroundGenerationVersion;
     private string _status = "loading";
@@ -103,6 +106,7 @@ public partial class MainWindow : Window
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _hwndSource?.RemoveHook(WndProc);
             _gifTimer.Stop();
+            ClearGifTempFiles();
             _windowLifetime.Cancel();
         };
     }
@@ -141,6 +145,9 @@ public partial class MainWindow : Window
             _gifFrameIndex = 0;
             _gifPaused = false;
             _gifSpeed = 1.0;
+            _gifFrameModes = null;
+            _gifGeneratedFrames.Clear();
+            ClearGifTempFiles();
             _gifTimer.Stop();
             _loadedModes.Clear();
             InvalidateForegroundGeneration();
@@ -155,6 +162,9 @@ public partial class MainWindow : Window
             }
 
             _animatedImage = animated;
+            _gifFrameModes = animated is null
+                ? null
+                : Enumerable.Repeat(DisplayMode.Original, animated.Frames.Count).ToArray();
             _original = bitmap;
             _loadedModes[DisplayMode.Original] = bitmap;
             _loadedModes[DisplayMode.PixelInspect] = bitmap;
@@ -370,16 +380,29 @@ public partial class MainWindow : Window
         {
             case Key.D0:
             case Key.NumPad0:
+                if (_animatedImage is not null)
+                {
+                    SwitchGifFrameMode(DisplayMode.PixelInspect);
+                    break;
+                }
+
                 SwitchMode(DisplayMode.PixelInspect);
                 break;
             case Key.D1:
             case Key.NumPad1:
+                if (_animatedImage is not null)
+                {
+                    SwitchGifFrameMode(DisplayMode.Original);
+                    break;
+                }
+
                 SwitchMode(DisplayMode.Original);
                 break;
             case Key.D2:
             case Key.NumPad2:
                 if (_animatedImage is not null)
                 {
+                    SwitchGifFrameMode(DisplayMode.AnimeMl2x);
                     break;
                 }
 
@@ -389,6 +412,7 @@ public partial class MainWindow : Window
             case Key.NumPad3:
                 if (_animatedImage is not null)
                 {
+                    SwitchGifFrameMode(DisplayMode.AnimeMl4x);
                     break;
                 }
 
@@ -398,6 +422,7 @@ public partial class MainWindow : Window
             case Key.NumPad8:
                 if (_animatedImage is not null)
                 {
+                    SwitchGifFrameMode(DisplayMode.HighQuality2x);
                     break;
                 }
 
@@ -407,6 +432,7 @@ public partial class MainWindow : Window
             case Key.NumPad9:
                 if (_animatedImage is not null)
                 {
+                    SwitchGifFrameMode(DisplayMode.HighQuality4x);
                     break;
                 }
 
@@ -707,6 +733,24 @@ H: help
         ScheduleGifTimer();
     }
 
+    private void SwitchGifFrameMode(DisplayMode mode)
+    {
+        if (_animatedImage is null || _gifFrameModes is null)
+        {
+            return;
+        }
+
+        if (mode.IsGenerated() && !_gifPaused)
+        {
+            SetStatus("pause GIF to scale frames");
+            return;
+        }
+
+        _gifFrameModes[_gifFrameIndex] = mode;
+        _mode = mode;
+        DisplayCurrentGifFrame();
+    }
+
     private void ScheduleGifTimer()
     {
         if (_animatedImage is null || _gifPaused)
@@ -745,6 +789,17 @@ H: help
         }
 
         _gifFrameIndex = Math.Clamp(frameIndex, 0, _animatedImage.Frames.Count - 1);
+        _mode = _gifFrameModes?[_gifFrameIndex] ?? DisplayMode.Original;
+        DisplayCurrentGifFrame();
+    }
+
+    private void DisplayCurrentGifFrame()
+    {
+        if (_animatedImage is null)
+        {
+            return;
+        }
+
         var bitmap = _animatedImage.Frames[_gifFrameIndex].Bitmap;
         _original = bitmap;
         _loadedModes[DisplayMode.Original] = bitmap;
@@ -759,8 +814,153 @@ H: help
                 sourcePixelScale: 1);
             ApplyWindowBorder(bitmap);
         }
+        else if (_gifGeneratedFrames.TryGetValue((_gifFrameIndex, _mode), out var generated))
+        {
+            Viewport.SetSource(generated, useNearestNeighbor: false, preserveView: true, sourcePixelScale: _mode.Scale());
+            ApplyWindowBorder(generated);
+            SetStatus("ready");
+        }
+        else if (_gifPaused)
+        {
+            Viewport.SetSource(bitmap, useNearestNeighbor: false, preserveView: true, sourcePixelScale: 1);
+            ApplyWindowBorder(bitmap);
+            ObserveBackground(LoadGifGeneratedFrameAsync(_gifFrameIndex, _mode));
+        }
+        else
+        {
+            Viewport.SetSource(bitmap, useNearestNeighbor: false, preserveView: true, sourcePixelScale: 1);
+            ApplyWindowBorder(bitmap);
+        }
 
         UpdateTitle();
+    }
+
+    private async Task LoadGifGeneratedFrameAsync(int frameIndex, DisplayMode mode)
+    {
+        if (_animatedImage is null
+            || frameIndex < 0
+            || frameIndex >= _animatedImage.Frames.Count
+            || !mode.IsGenerated())
+        {
+            return;
+        }
+
+        if (_gifGeneratedFrames.ContainsKey((frameIndex, mode)))
+        {
+            return;
+        }
+
+        var imageVersion = _imageLoadVersion;
+        var inputPath = GetGifTempPath(frameIndex, DisplayMode.Original, "input");
+        var outputPath = GetGifTempPath(frameIndex, mode, "output");
+
+        try
+        {
+            SetProgressVisible(true);
+            SetStatus($"generating frame {frameIndex + 1} {mode.Label()}");
+
+            if (!File.Exists(inputPath))
+            {
+                await SaveBitmapPngAsync(_animatedImage.Frames[frameIndex].Bitmap, inputPath, _windowLifetime.Token);
+            }
+
+            if (!File.Exists(outputPath))
+            {
+                if (mode.IsExternalMl())
+                {
+                    var progress = new Progress<double>(SetGenerationProgress);
+                    await _cacheService.CreateExternalUpscaleAsync(inputPath, outputPath, mode, _windowLifetime.Token, progress);
+                }
+                else
+                {
+                    SetGenerationProgress(5);
+                    await WpfImageScaler.ScaleAndSavePngAsync(
+                        _animatedImage.Frames[frameIndex].Bitmap,
+                        outputPath,
+                        mode.Scale(),
+                        _windowLifetime.Token);
+                    SetGenerationProgress(100);
+                }
+            }
+
+            var bitmap = await Task.Run(() => ImageLoader.LoadFrozen(outputPath), _windowLifetime.Token);
+            if (imageVersion != _imageLoadVersion || _animatedImage is null)
+            {
+                return;
+            }
+
+            _gifGeneratedFrames[(frameIndex, mode)] = bitmap;
+            if (_gifFrameIndex == frameIndex && _mode == mode)
+            {
+                Viewport.SetSource(bitmap, useNearestNeighbor: false, preserveView: true, sourcePixelScale: mode.Scale());
+                ApplyWindowBorder(bitmap);
+                SetStatus("ready");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ExternalUpscalerNotConfiguredException ex)
+        {
+            if (_gifFrameIndex == frameIndex && _mode == mode)
+            {
+                SetStatus(ex.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_gifFrameIndex == frameIndex && _mode == mode)
+            {
+                SetStatus($"frame generation failed: {ex.Message}");
+            }
+        }
+        finally
+        {
+            SetProgressVisible(false);
+        }
+    }
+
+    private string GetGifTempPath(int frameIndex, DisplayMode mode, string kind)
+    {
+        _gifTempRoot ??= _cacheService.CreateTemporaryFrameCacheDirectory();
+        Directory.CreateDirectory(_gifTempRoot);
+        return Path.Combine(_gifTempRoot, $"frame-{frameIndex:D5}-{kind}-{mode.Label()}.png");
+    }
+
+    private static async Task SaveBitmapPngAsync(BitmapSource bitmap, string path, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await using var stream = File.Create(path);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        encoder.Save(stream);
+        await stream.FlushAsync(cancellationToken);
+    }
+
+    private void ClearGifTempFiles()
+    {
+        if (string.IsNullOrWhiteSpace(_gifTempRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(_gifTempRoot))
+            {
+                Directory.Delete(_gifTempRoot, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        finally
+        {
+            _gifTempRoot = null;
+        }
     }
 
     private void SwitchGeneratedMode(DisplayMode mode)

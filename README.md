@@ -81,7 +81,7 @@ Remove it:
 - Ctrl + O: open more images
 - Drag image files onto the window: open each in a new window
 
-Animated GIF playback is supported for original/pixel-inspect display. Generated scaling modes are skipped for animated GIFs.
+Animated GIF playback is supported. Pause a GIF before selecting generated scaling modes for a frame. Each frame remembers its selected display mode while the window is open. Generated GIF frame outputs are temporary per-window cache files and are deleted when the window closes; if the app is terminated before cleanup, they expire through the normal 3-hour cache cleanup.
 
 Move-window mode:
 
